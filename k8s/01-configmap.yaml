@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: banking-config
+  namespace: banking
+data:
+  DB_HOST: postgres-db
+  DB_PORT: "5432"
+  DB_NAME: bankingdb
+  DB_USER: bankuser
+  API_LOG_LEVEL: info
+  MAX_TRANSACTION_LIMIT: "50000"
+  PORT: "3000"

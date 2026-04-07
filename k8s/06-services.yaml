@@ -1,0 +1,44 @@
+# ── Headless Service for PostgreSQL StatefulSet ───────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-db
+  namespace: banking
+spec:
+  clusterIP: None          # makes it headless
+  selector:
+    app: postgres-db
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+
+# ---
+# # ── ClusterIP Service for Banking API ─────────────────────
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: banking-api-service
+#   namespace: banking
+# spec:
+#   selector:
+#     app: banking-api
+#   ports:
+#     - port: 3000
+#       targetPort: 3000
+#       name: http
+
+# ---
+# # ── ClusterIP Service for Dashboard ───────────────────────
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: banking-dashboard-service
+#   namespace: banking
+# spec:
+#   selector:
+#     app: banking-dashboard
+#   ports:
+#     - port: 80
+#       targetPort: 80
+#       name: http

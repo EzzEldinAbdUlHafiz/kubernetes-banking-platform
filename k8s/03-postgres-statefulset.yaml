@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-db
+  namespace: banking
+spec:
+  serviceName: postgres-db
+  replicas: 2
+  selector:
+    matchLabels:
+      app: postgres-db
+  podManagementPolicy: OrderedReady
+  template:
+    metadata:
+      labels:
+        app: postgres-db
+    spec:
+
+      # ── Placement ────────────────────────────────────────
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: In
+                    values:
+                      - high-memory
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - postgres-db
+              topologyKey: kubernetes.io/hostname
+
+      tolerations:
+        - key: database-only
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
+      # ── Security ─────────────────────────────────────────
+      securityContext:
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+
+      # ── Init Container ───────────────────────────────────
+      initContainers:
+        - name: init-permissions
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - |
+              chown -R 70:70 /var/lib/postgresql/data
+              chmod -R 700 /var/lib/postgresql/data
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 0
+
+      # ── Volumes ──────────────────────────────────────────
+      volumes:
+        - name: init-script
+          configMap:
+            name: postgres-init-script
+            defaultMode: 0755      # makes init.sh executable
+
+      # ── Container ────────────────────────────────────────
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          command: ["/scripts/init.sh"]
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secret
+                  key: DB_PASSWORD
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_USER
+            - name: PGDATA
+              value: /var/lib/postgresql/data
+
+          ports:
+            - containerPort: 5432
+              name: postgres
+
+          # ── Probes ─────────────────────────────────────
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            failureThreshold: 20
+            periodSeconds: 5       # 20x5s = 100s max to start
+
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # ── Volume Mounts ───────────────────────────────
+          volumeMounts:
+            - name: init-script
+              mountPath: /scripts
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+
+          # ── Resources ────────────────────────────────────
+          resources:
+            limits:
+              memory: "2Gi"
+            requests:
+              memory: "1Gi"
+
+  # ── PVC per pod ────────────────────────────────────────
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
