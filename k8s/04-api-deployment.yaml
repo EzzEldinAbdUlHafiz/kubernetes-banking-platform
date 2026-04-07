@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: banking-api
+  namespace: banking
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: banking-api
+  template:
+    metadata:
+      labels:
+        app: banking-api
+    spec:
+      serviceAccountName: banking-api-sa
+
+      # ── Spread replicas across nodes ─────────────────────
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: banking-api
+
+      # ── Stay off the database node ────────────────────────
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - postgres-db
+              topologyKey: kubernetes.io/hostname
+
+      # ── Init container: wait for DB ───────────────────────
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for postgres-db:5432..."
+              until nc -z postgres-db 5432; do
+                echo "DB not ready, retrying in 2s..."
+                sleep 2
+              done
+              echo "DB is ready!"
+
+      # ── Container ─────────────────────────────────────────
+      containers:
+        - name: banking-api
+          image: YOUR_USER/banking-api:v1.0
+          imagePullPolicy: Always
+
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_USER
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: PORT
+            - name: API_LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: API_LOG_LEVEL
+            - name: MAX_TRANSACTION_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: MAX_TRANSACTION_LIMIT
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secret
+                  key: DB_PASSWORD
+
+          ports:
+            - containerPort: 3000
+              name: http
+
+          # ── Probes ───────────────────────────────────────
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            failureThreshold: 12
+            periodSeconds: 5        # 12x5s = 60s max to start
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            failureThreshold: 3
+
+          # ── Resources ────────────────────────────────────
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          # ── Writable tmp dir (readOnlyRootFilesystem) ────
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
