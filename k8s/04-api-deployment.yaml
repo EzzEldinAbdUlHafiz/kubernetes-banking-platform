@@ -13,28 +13,33 @@ spec:
       labels:
         app: banking-api
     spec:
-      serviceAccountName: banking-api-sa
-
-      # ── Spread replicas across nodes ─────────────────────
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels:
-              app: banking-api
+      # serviceAccountName: banking-api-sa
 
       # ── Stay off the database node ────────────────────────
       affinity:
-        podAntiAffinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: In
+                    values:
+                      - high-memory
+        podAntiAffinity:  # existing - remove the postgres-db part
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
                 matchExpressions:
                   - key: app
                     operator: In
                     values:
-                      - postgres-db
+                      - banking-api    # change from postgres-db to banking-api
               topologyKey: kubernetes.io/hostname
+
+      tolerations:
+        - key: database-only
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
 
       # ── Init container: wait for DB ───────────────────────
       initContainers:
@@ -54,7 +59,7 @@ spec:
       # ── Container ─────────────────────────────────────────
       containers:
         - name: banking-api
-          image: YOUR_USER/banking-api:v1.0
+          image: ezzeldinabdulhafiz/banking-api:v1.0
           imagePullPolicy: Always
 
           securityContext:
