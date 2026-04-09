@@ -54,7 +54,7 @@ spec:
       # ── Container ─────────────────────────────────────────
       containers:
         - name: banking-api
-          image: YOUR_USER/banking-api:v1.0
+          image: ezzeldinabdulhafiz/banking-api:v1.0
           imagePullPolicy: Always
 
           securityContext:
