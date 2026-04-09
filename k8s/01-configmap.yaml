@@ -4,7 +4,8 @@ metadata:
   name: banking-config
   namespace: banking
 data:
-  DB_HOST: postgres-db
+  DB_HOST_PRIMARY: postgres-db-0.postgres-db.banking.svc.cluster.local
+  DB_HOST_REPLICA: postgres-db-1.postgres-db.banking.svc.cluster.local
   DB_PORT: "5432"
   DB_NAME: bankingdb
   DB_USER: bankuser
