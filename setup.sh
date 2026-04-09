@@ -108,8 +108,6 @@ init_minikube() {
 
   log_info "Starting minikube..."
   minikube start \
-    --cpus=4 \
-    --memory=8g \
     --driver=docker \
     --nodes=3 \
     --cni=calico
