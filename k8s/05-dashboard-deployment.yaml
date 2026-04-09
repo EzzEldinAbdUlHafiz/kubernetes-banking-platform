@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: banking-dashboard
+  namespace: banking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: banking-dashboard
+  template:
+    metadata:
+      labels:
+        app: banking-dashboard
+    spec:
+
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: In
+                    values:
+                      - high-memory
+      tolerations:
+        - key: database-only
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
+      containers:
+      - name: banking-dashboard
+        image: ezzeldinabdulhafiz/banking-dashboard:v1.0
+        imagePullPolicy: Always
+        volumeMounts:
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /var/run
+            - name: tmp
+              mountPath: /tmp
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+          requests:
+            memory: "128Mi"
+            cpu: "200m"
+        ports:
+        - containerPort: 80
+        securityContext:
+          runAsUser: 101
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - NET_BIND_SERVICE
+
+          # ── Probes ───────────────────────────────────────              
+        startupProbe:
+          httpGet:
+            path: /
+            port: 80
+          failureThreshold: 12
+          periodSeconds: 5        # 12x5s = 60s max to start
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
