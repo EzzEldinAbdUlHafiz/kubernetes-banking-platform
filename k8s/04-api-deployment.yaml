@@ -71,11 +71,16 @@ spec:
                 - ALL
 
           env:
-            - name: DB_HOST
+            - name: DB_HOST_PRIMARY
               valueFrom:
                 configMapKeyRef:
                   name: banking-config
-                  key: DB_HOST
+                  key: DB_HOST_PRIMARY
+            - name: DB_HOST_REPLICA
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_HOST_REPLICA
             - name: DB_PORT
               valueFrom:
                 configMapKeyRef:

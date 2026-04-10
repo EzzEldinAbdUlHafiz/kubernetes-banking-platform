@@ -1,10 +1,23 @@
+# ── App Configuration ──────────────────────────────────────
+# This file contains non-sensitive application config.
+#
+# NOTE: The postgres init script ConfigMap is NOT here.
+# It is generated from k8s/scripts/postgres-init.sh by setup.sh
+# or manually with:
+#
+#   kubectl create configmap postgres-init-script \
+#     --from-file=init.sh=k8s/scripts/postgres-init.sh \
+#     --namespace=banking \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: banking-config
   namespace: banking
 data:
-  DB_HOST: postgres-db
+  DB_HOST_PRIMARY: postgres-db-0.postgres-db.banking.svc.cluster.local
+  DB_HOST_REPLICA: postgres-db-1.postgres-db.banking.svc.cluster.local
   DB_PORT: "5432"
   DB_NAME: bankingdb
   DB_USER: bankuser

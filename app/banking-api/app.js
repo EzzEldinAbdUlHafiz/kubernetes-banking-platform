@@ -6,21 +6,32 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ── Database Connection ────────────────────────────────────
-const pool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME     || 'bankingdb',
-  user:     process.env.DB_USER     || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  max: 10,
-  idleTimeoutMillis: 30000,
+// ── Connection Pools ───────────────────────────────────────
+const primaryPool = new Pool({
+  host:                    process.env.DB_HOST_PRIMARY,
+  port:                    parseInt(process.env.DB_PORT || '5432'),
+  database:                process.env.DB_NAME     || 'bankingdb',
+  user:                    process.env.DB_USER     || 'postgres',
+  password:                process.env.DB_PASSWORD || 'postgres',
+  max:                     10,
+  idleTimeoutMillis:       30000,
+  connectionTimeoutMillis: 5000,
+});
+
+const replicaPool = new Pool({
+  host:                    process.env.DB_HOST_REPLICA,
+  port:                    parseInt(process.env.DB_PORT || '5432'),
+  database:                process.env.DB_NAME     || 'bankingdb',
+  user:                    process.env.DB_USER     || 'postgres',
+  password:                process.env.DB_PASSWORD || 'postgres',
+  max:                     10,
+  idleTimeoutMillis:       30000,
   connectionTimeoutMillis: 5000,
 });
 
 // ── Init Tables ────────────────────────────────────────────
 const initDB = async () => {
-  await pool.query(`
+  await primaryPool.query(`
     CREATE TABLE IF NOT EXISTS accounts (
       id          SERIAL PRIMARY KEY,
       owner       VARCHAR(100) NOT NULL,
@@ -28,7 +39,7 @@ const initDB = async () => {
       created_at  TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  await pool.query(`
+  await primaryPool.query(`
     CREATE TABLE IF NOT EXISTS transactions (
       id           SERIAL PRIMARY KEY,
       from_account INT REFERENCES accounts(id),
@@ -39,10 +50,9 @@ const initDB = async () => {
       created_at   TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  // Seed data if empty
-  const { rows } = await pool.query('SELECT COUNT(*) FROM accounts');
+  const { rows } = await primaryPool.query('SELECT COUNT(*) FROM accounts');
   if (parseInt(rows[0].count) === 0) {
-    await pool.query(`
+    await primaryPool.query(`
       INSERT INTO accounts (owner, balance) VALUES
         ('Ahmed Mohamed',  10000.00),
         ('Sara Ali',        5000.00),
@@ -60,23 +70,28 @@ app.get('/health', (_req, res) => {
 
 app.get('/ready', async (_req, res) => {
   try {
-    await pool.query('SELECT 1');
-    res.json({ status: 'ready', db: 'connected' });
+    await primaryPool.query('SELECT 1');
+    await replicaPool.query('SELECT 1');
+    res.json({ status: 'ready', primary: 'connected', replica: 'connected' });
   } catch (err) {
     res.status(503).json({ status: 'not_ready', db: 'disconnected', error: err.message });
   }
 });
 
-// ── Stats (for dashboard) ──────────────────────────────────
+// ── Stats ──────────────────────────────────────────────────
 app.get('/api/stats', async (_req, res) => {
   try {
-    const accRes = await pool.query('SELECT COUNT(*) as cnt, COALESCE(SUM(balance),0) as total FROM accounts');
-    const txnRes = await pool.query('SELECT COUNT(*) as cnt FROM transactions');
+    const accRes = await replicaPool.query(
+      'SELECT COUNT(*) as cnt, COALESCE(SUM(balance),0) as total FROM accounts'
+    );
+    const txnRes = await replicaPool.query(
+      'SELECT COUNT(*) as cnt FROM transactions'
+    );
     res.json({
-      total_accounts:    parseInt(accRes.rows[0].cnt),
-      total_balance:     parseFloat(accRes.rows[0].total),
+      total_accounts:     parseInt(accRes.rows[0].cnt),
+      total_balance:      parseFloat(accRes.rows[0].total),
       total_transactions: parseInt(txnRes.rows[0].cnt),
-      api_version:       process.env.APP_VERSION || 'v1.0',
+      api_version:        process.env.APP_VERSION || 'v1.0',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -86,7 +101,9 @@ app.get('/api/stats', async (_req, res) => {
 // ── Accounts ───────────────────────────────────────────────
 app.get('/api/accounts', async (_req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM accounts ORDER BY created_at DESC');
+    const result = await replicaPool.query(
+      'SELECT * FROM accounts ORDER BY created_at DESC'
+    );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -97,7 +114,7 @@ app.post('/api/accounts', async (req, res) => {
   try {
     const { owner, initial_balance = 0 } = req.body;
     if (!owner) return res.status(400).json({ error: 'owner is required' });
-    const result = await pool.query(
+    const result = await primaryPool.query(
       'INSERT INTO accounts (owner, balance) VALUES ($1, $2) RETURNING *',
       [owner, initial_balance]
     );
@@ -110,7 +127,7 @@ app.post('/api/accounts', async (req, res) => {
 // ── Transactions ───────────────────────────────────────────
 app.get('/api/transactions', async (_req, res) => {
   try {
-    const result = await pool.query(`
+    const result = await replicaPool.query(`
       SELECT t.*,
              fa.owner AS from_owner,
              ta.owner AS to_owner
@@ -139,7 +156,7 @@ app.post('/api/transactions', async (req, res) => {
   if (amount > maxLimit)
     return res.status(400).json({ error: `Amount exceeds limit of ${maxLimit}` });
 
-  const client = await pool.connect();
+  const client = await primaryPool.connect();
   try {
     await client.query('BEGIN');
     const fromAcc = await client.query(
@@ -153,8 +170,12 @@ app.post('/api/transactions', async (req, res) => {
     if (parseFloat(fromAcc.rows[0].balance) < amount)
       throw new Error('Insufficient balance');
 
-    await client.query('UPDATE accounts SET balance=balance-$1 WHERE id=$2', [amount, from_account]);
-    await client.query('UPDATE accounts SET balance=balance+$1 WHERE id=$2', [amount, to_account]);
+    await client.query(
+      'UPDATE accounts SET balance=balance-$1 WHERE id=$2', [amount, from_account]
+    );
+    await client.query(
+      'UPDATE accounts SET balance=balance+$1 WHERE id=$2', [amount, to_account]
+    );
     const txn = await client.query(
       'INSERT INTO transactions (from_account, to_account, amount, note) VALUES ($1,$2,$3,$4) RETURNING *',
       [from_account, to_account, amount, note || null]
@@ -172,8 +193,8 @@ app.post('/api/transactions', async (req, res) => {
 // ── Start ──────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT || '3000');
 app.listen(PORT, async () => {
-  console.log(`Banking API v${process.env.APP_VERSION || '1.0'} listening on :${PORT}`);
-  console.log(`DB_HOST=${process.env.DB_HOST}, LOG_LEVEL=${process.env.API_LOG_LEVEL}`);
+  console.log(`Banking API v${process.env.APP_VERSION || 'v1.0'} listening on :${PORT}`);
+  console.log(`PRIMARY=${process.env.DB_HOST_PRIMARY} REPLICA=${process.env.DB_HOST_REPLICA}`);
   try {
     await initDB();
   } catch (err) {
