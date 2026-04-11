@@ -1,4 +1,4 @@
-# ── 1. Default deny all ingress ───────────────────────────
+# ── 1. Default deny all ingress and egress ────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -8,9 +8,28 @@ spec:
   podSelector: {}
   policyTypes:
     - Ingress
+    - Egress
 
 ---
-# ── 2. Allow ingress controller → dashboard ───────────────
+# ── 2. Allow DNS egress for all pods ─────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: banking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+# ── 3. Allow ingress controller → dashboard ───────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -31,7 +50,7 @@ spec:
         - port: 80
 
 ---
-# ── 3. Allow ingress controller → API ─────────────────────
+# ── 4. Allow ingress controller → API ─────────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -52,7 +71,49 @@ spec:
         - port: 3000
 
 ---
-# ── 4. Allow API → postgres ───────────────────────────────
+# ── 5. Allow API egress → postgres ────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-egress-to-postgres
+  namespace: banking
+spec:
+  podSelector:
+    matchLabels:
+      app: banking-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres-db
+      ports:
+        - port: 5432
+
+---
+# ── 6. Allow API ingress from postgres (responses) ────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-ingress-from-postgres
+  namespace: banking
+spec:
+  podSelector:
+    matchLabels:
+      app: banking-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgres-db
+      ports:
+        - port: 5432
+
+---
+# ── 7. Allow postgres ingress from API ────────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -73,7 +134,7 @@ spec:
         - port: 5432
 
 ---
-# ── 5. Allow postgres replication ─────────────────────────
+# ── 8. Allow postgres replication ─────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -85,6 +146,7 @@ spec:
       app: postgres-db
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
         - podSelector:
@@ -92,9 +154,16 @@ spec:
               app: postgres-db
       ports:
         - port: 5432
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres-db
+      ports:
+        - port: 5432
 
 ---
-# ── 6. Allow fluentd egress ───────────────────────────────
+# ── 9. Allow fluentd egress ───────────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -108,23 +177,3 @@ spec:
     - Egress
   egress:
     - {}
-
----
-# ── 7. Explicit deny dashboard → postgres ─────────────────
-# Redundant with default-deny-all but explicit for documentation
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: deny-dashboard-to-postgres
-  namespace: banking
-spec:
-  podSelector:
-    matchLabels:
-      app: postgres-db
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: banking-dashboard

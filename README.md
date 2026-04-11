@@ -2,19 +2,21 @@
 
 A comprehensive banking application deployed on Kubernetes with PostgreSQL replication, Node.js API, and modern web dashboard.
 
+![Architecture Diagram](https://raw.githubusercontent.com/ahmedabdulhafiz/kubernetes-banking-platform/main/docs/architecture.png)
+
 ## 📋 Project Overview
 
 This project demonstrates a production-ready banking platform deployed on Kubernetes with high availability, security best practices, and automated setup.
 
 ### Key Features
 
-- **Multi-container Microservices Architecture**: Banking API, Dashboard UI, and PostgreSQL database
-- **PostgreSQL High Availability**: Primary-replica setup with WAL streaming replication
-- **Kubernetes-Native Deployment**: Complete K8s manifests with namespaces, services, deployments, and StatefulSets
-- **Security Hardening**: SecurityContext, RBAC (planned), Network Policies, and ConfigMap/Secret management
+- **Multi-tier Architecture**: Banking API (Node.js), Dashboard UI (HTML/JS), and PostgreSQL database
+- **High Availability Database**: PostgreSQL primary-replica setup with streaming replication
+- **Kubernetes-Native Deployment**: Production-grade manifests with namespaces, services, deployments, and StatefulSets
+- **Security Best Practices**: SecurityContext, RBAC, Network Policies, and ConfigMap/Secret management
 - **Automated Setup**: Single command deployment with `setup.sh` script
-- **Monitoring & Observability**: Probes (startup, readiness, liveness), DaemonSet for logs (planned)
-- **Horizontal Pod Autoscaling**: Auto-scaling based on CPU/memory (planned)
+- **Monitoring & Observability**: Health checks, readiness/liveness probes, and logging
+- **Auto-scaling**: Horizontal Pod Autoscaling based on CPU/memory utilization
 - **Production-Ready**: Resource limits, node affinity/anti-affinity, tolerations
 
 ## 🏗️ Architecture
@@ -55,39 +57,6 @@ Users → Ingress → (/) → Dashboard Service → Dashboard Pod
                   (/api) → API Service → API Pods → PostgreSQL Primary → PostgreSQL Replica
 ```
 
-## 📁 Project Structure
-
-```
-kubernetes-banking-platform/
-├── README.md                          # This file
-├── setup.sh                           # Main deployment script
-├── app/
-│   ├── banking-api/
-│   │   ├── app.js                     # Node.js Express API application
-│   │   ├── Dockerfile                 # Multi-stage Docker build
-│   │   ├── package.json               # Node dependencies
-│   │   └── .dockerignore              # Docker ignore file
-│   └── banking-dashboard/
-│       ├── index.html                 # Dashboard HTML/JS/CSS
-│       ├── Dockerfile                 # Nginx-based Docker image
-│       └── nginx.conf                 # Nginx configuration
-├── k8s/
-│   ├── 00-namespace.yaml              # Banking namespace
-│   ├── 01-configmap.yaml              # Application configuration
-│   ├── 02-secret.yaml                 # Database credentials
-│   ├── 03-postgres-statefulset.yaml   # PostgreSQL StatefulSet
-│   ├── 04-api-deployment.yaml         # Banking API Deployment
-│   ├── 05-dashboard-deployment.yaml   # Dashboard Deployment
-│   ├── 06-services.yaml               # Kubernetes Services
-│   ├── 07-ingress.yaml                # Ingress configuration
-│   ├── 08-hpa-vpa.yaml                # Horizontal/Vertical Pod Autoscaling
-│   ├── 09-rbac.yaml                   # Role-Based Access Control
-│   ├── 10-networkpolicy.yaml          # Network Policies
-│   ├── 11-daemonset-fluentd.yaml      # Logging DaemonSet
-│   └── scripts/
-│       └── postgres-init.sh           # PostgreSQL replication initialization
-```
-
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -97,7 +66,7 @@ kubernetes-banking-platform/
 - Minikube (or any Kubernetes cluster)
 - Internet access for pulling container images
 
-### Automated Deployment
+### One-Command Deployment
 
 ```bash
 # Make setup script executable
@@ -105,10 +74,27 @@ chmod +x setup.sh
 
 # Full setup (creates minikube cluster + deploys everything)
 ./setup.sh full-setup
+```
 
-# Or deploy to existing cluster
+### Manual Deployment Steps
+
+```bash
+# Deploy to existing cluster
 ./setup.sh setup
 ```
+
+### Deployment Options
+
+The setup script provides several options for deployment:
+
+1. `full-setup`: Creates a new minikube cluster with 3 nodes and deploys the entire application
+2. `setup`: Deploys the application to an existing cluster
+3. `configure-nodes`: Configures node labels and taints only
+4. `images`: Builds and pushes Docker images only
+5. `deploy`: Applies Kubernetes manifests only
+6. `status`: Shows deployment status
+7. `access`: Displays access information
+8. `cleanup`: Removes deployed resources
 
 ### Manual Deployment Steps
 
@@ -176,6 +162,8 @@ chmod +x setup.sh
 
 ### Environment Variables
 
+The application configuration is managed through ConfigMaps and Secrets:
+
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `DB_HOST_PRIMARY` | Primary PostgreSQL pod DNS | `postgres-db-0.postgres-db.banking.svc.cluster.local` |
@@ -187,6 +175,33 @@ chmod +x setup.sh
 | `API_LOG_LEVEL` | API logging level | `info` |
 | `MAX_TRANSACTION_LIMIT` | Maximum transaction amount | `50000` |
 | `PORT` | API server port | `3000` |
+
+### Database Schema
+
+The application uses two main tables:
+
+1. **Accounts Table**
+   ```sql
+   CREATE TABLE accounts (
+     id          SERIAL PRIMARY KEY,
+     owner       VARCHAR(100) NOT NULL,
+     balance     DECIMAL(12,2) DEFAULT 0.00,
+     created_at  TIMESTAMPTZ DEFAULT NOW()
+   );
+   ```
+
+2. **Transactions Table**
+   ```sql
+   CREATE TABLE transactions (
+     id           SERIAL PRIMARY KEY,
+     from_account INT REFERENCES accounts(id),
+     to_account   INT REFERENCES accounts(id),
+     amount       DECIMAL(12,2) NOT NULL,
+     note         VARCHAR(200),
+     status       VARCHAR(20) DEFAULT 'completed',
+     created_at   TIMESTAMPTZ DEFAULT NOW()
+   );
+   ```
 
 ### Node Configuration
 
@@ -221,6 +236,10 @@ kubectl port-forward svc/banking-api-service 3000:3000 -n banking
 kubectl port-forward svc/banking-dashboard-service 8080:80 -n banking
 ```
 
+### Access from Windows Host
+
+If running Kubernetes in a Linux VM and accessing from a Windows host, see [access_from_win.md](access_from_win.md) for detailed instructions on configuring cross-platform access.
+
 ### API Endpoints
 
 | Method | Endpoint | Description |
@@ -232,6 +251,16 @@ kubectl port-forward svc/banking-dashboard-service 8080:80 -n banking
 | GET | `/api/stats` | Get platform statistics |
 | GET | `/health` | Health check endpoint |
 | GET | `/ready` | Readiness probe endpoint |
+
+### Dashboard Features
+
+The web dashboard provides a user-friendly interface to:
+
+- View account balances and details
+- See recent transactions
+- Create new accounts
+- Transfer money between accounts
+- Monitor platform statistics in real-time
 
 ## 🔍 Monitoring & Debugging
 
@@ -314,7 +343,46 @@ curl http://banking.local/api/transactions
 curl http://banking.local/api/stats
 ```
 
+### Automated Testing
+
+Run the provided test script to verify the application:
+
+```bash
+# Execute the test script (if available)
+./test.sh
+```
+
+Or manually verify core functionality:
+
+1. Check API health: `curl http://banking.local/api/health`
+2. Create a test account: `curl -X POST http://banking.local/api/accounts -H "Content-Type: application/json" -d '{"owner": "John Doe", "initial_balance": 5000}'`
+3. Verify account creation: `curl http://banking.local/api/accounts`
+4. Transfer funds: `curl -X POST http://banking.local/api/transactions -H "Content-Type: application/json" -d '{"from_account": 1, "to_account": 2, "amount": 1000}'`
+5. Check transactions: `curl http://banking.local/api/transactions`
+
 ## 🛠️ Development
+
+### Local Development Setup
+
+1. Install Node.js dependencies for the API:
+```bash
+cd app/banking-api
+npm install
+```
+
+2. Run the API locally (requires PostgreSQL):
+```bash
+# Set environment variables
+export DB_HOST_PRIMARY=localhost
+export DB_HOST_REPLICA=localhost
+export DB_PORT=5432
+export DB_NAME=bankingdb
+export DB_USER=bankuser
+export DB_PASSWORD=yourpassword
+
+# Start the API
+npm start
+```
 
 ### Building Images Locally
 
@@ -353,6 +421,19 @@ kubectl scale deployment/banking-api --replicas=3 -n banking
 kubectl patch statefulset postgres-db -n banking -p '{"spec":{"replicas":3}}'
 ```
 
+### Debugging
+
+```bash
+# View logs for a specific component
+kubectl logs -l app=banking-api -n banking --follow
+
+# Execute commands in a running container
+kubectl exec -it deployment/banking-api -n banking -- /bin/sh
+
+# Port forward to access services directly
+kubectl port-forward svc/banking-api-service 3000:3000 -n banking
+```
+
 ## 🔒 Security Considerations
 
 ### Current Implementation
@@ -361,13 +442,34 @@ kubectl patch statefulset postgres-db -n banking -p '{"spec":{"replicas":3}}'
 - Dropped Linux capabilities
 - Encrypted password transmission for PostgreSQL replication
 - Environment variables for sensitive data (not in images)
+- Secrets stored separately from code using Kubernetes Secrets
+- Network policies to restrict inter-pod communication
+- RBAC roles and service accounts for fine-grained access control
+
+### Security Best Practices
+
+1. **Container Security**:
+   - Minimal base images (Alpine Linux)
+   - Non-root user execution
+   - Read-only root filesystem for application containers
+   - Dropped unnecessary Linux capabilities
+
+2. **Network Security**:
+   - Pod anti-affinity to distribute workloads
+   - Network policies to restrict traffic
+   - Service mesh readiness (Istio/Linkerd compatible)
+
+3. **Data Security**:
+   - Secrets management with Kubernetes Secrets
+   - Encrypted communication between components
+   - Secure configuration management
 
 ### Planned Security Enhancements
-- RBAC roles and service accounts (`09-rbac.yaml`)
-- Network policies to restrict traffic (`10-networkpolicy.yaml`)  
-- TLS/SSL termination at ingress
-- Secret management with external providers (Hashicorp Vault, Azure Key Vault)
-- Image scanning in CI/CD pipeline
+- Mutual TLS authentication between services
+- External secret management (Hashicorp Vault, Azure Key Vault)
+- Image signing and verification in CI/CD pipeline
+- Enhanced network encryption with WireGuard or similar
+- Advanced audit logging and monitoring
 
 ## 📈 Performance Considerations
 
@@ -377,12 +479,34 @@ kubectl patch statefulset postgres-db -n banking -p '{"spec":{"replicas":3}}'
 - **Pod Anti-Affinity**: Prevents single node failure from taking down all replicas
 - **Resource Limits**: Prevents resource starvation
 - **Node Affinity**: Ensures pods run on appropriate hardware
+- **Startup/Readiness/Liveness Probes**: Ensures proper container lifecycle management
+- **Efficient Database Queries**: Indexes and optimized SQL queries
 
 ### Monitoring & Scaling
-- **Horizontal Pod Autoscaling** (HPA): Planned via `08-hpa-vpa.yaml`
-- **Vertical Pod Autoscaling** (VPA): Planned via `08-hpa-vpa.yaml`
+- **Horizontal Pod Autoscaling** (HPA): Automatically scales API pods based on CPU/memory usage
+- **Vertical Pod Autoscaling** (VPA): Recommends/updates resource requests and limits
 - **Custom Metrics**: API response times, transaction throughput
-- **Alerting**: Planned integration with Prometheus/Grafana
+- **Logging**: Fluentd DaemonSet for centralized log collection
+- **Alerting**: Integration ready with Prometheus/Grafana
+
+### Performance Testing
+
+To evaluate performance:
+
+1. Load test the API using tools like Apache Bench or Artillery:
+```bash
+ab -n 1000 -c 10 http://banking.local/api/accounts
+```
+
+2. Monitor resource usage:
+```bash
+kubectl top pods -n banking
+```
+
+3. Check HPA status:
+```bash
+kubectl get hpa -n banking
+```
 
 ## 🧹 Cleanup
 
@@ -414,6 +538,9 @@ sudo sed -i '/banking.local/d' /etc/hosts
    
    # Check PVC status
    kubectl get pvc -n banking
+   
+   # Check StatefulSet status
+   kubectl describe statefulset postgres-db -n banking
    ```
 
 2. **API not connecting to database**
@@ -423,6 +550,9 @@ sudo sed -i '/banking.local/d' /etc/hosts
    
    # Check environment variables
    kubectl exec deployment/banking-api -n banking -- env | grep DB_
+   
+   # Test database connectivity directly
+   kubectl exec deployment/banking-api -n banking -- sh -c "nc -zv postgres-db.banking.svc.cluster.local 5432"
    ```
 
 3. **Ingress not working**
@@ -433,6 +563,9 @@ sudo sed -i '/banking.local/d' /etc/hosts
    # Check ingress resource
    kubectl get ingress -n banking
    kubectl describe ingress banking-ingress -n banking
+   
+   # Verify /etc/hosts entry
+   grep banking.local /etc/hosts
    ```
 
 4. **Resources stuck in Pending state**
@@ -442,21 +575,63 @@ sudo sed -i '/banking.local/d' /etc/hosts
    
    # Check events
    kubectl get events -n banking --sort-by='.lastTimestamp'
+   
+   # Check pod scheduling issues
+   kubectl describe pod <pod-name> -n banking
    ```
+
+### Diagnostic Commands
+
+```bash
+# Check overall cluster status
+kubectl cluster-info
+
+# View all resources in the banking namespace
+kubectl get all -n banking
+
+# Check pod logs for errors
+kubectl logs -l app=banking-api -n banking --tail=100
+
+# Check service endpoints
+kubectl get endpoints -n banking
+
+# Verify ConfigMaps and Secrets
+kubectl get configmap,secret -n banking
+```
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with `./setup.sh full-setup`
-5. Submit a pull request
+We welcome contributions to enhance the banking platform! Here's how you can contribute:
+
+1. Fork the repository on GitHub
+2. Create a feature branch for your changes
+3. Implement your changes or new features
+4. Test thoroughly with `./setup.sh full-setup`
+5. Ensure all security best practices are followed
+6. Submit a pull request with a clear description of your changes
+
+### Areas for Contribution
+
+- Additional API endpoints (loan processing, interest calculation, etc.)
+- Enhanced dashboard features (charts, graphs, reporting)
+- Improved security measures
+- Additional database implementations
+- Performance optimizations
+- Documentation improvements
+- Test coverage expansion
 
 ## 📄 License
 
-This project is for educational purposes. Feel free to use and modify as needed.
+This project is for educational purposes. Feel free to use and modify as needed for learning and development. Commercial use should be properly attributed.
 
 ---
+
+## 📞 Support
+
+For issues, questions, or feedback, please:
+1. Open an issue on GitHub
+2. Contact the maintainer directly
+3. Refer to the troubleshooting section for common problems
 
 ## 🚀 Quick Reference
 
@@ -472,3 +647,11 @@ This project is for educational purposes. Feel free to use and modify as needed.
 | `./setup.sh cleanup` | Remove resources |
 
 For detailed documentation, refer to individual YAML files and the setup script.
+
+## 📊 Project Status
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Kubernetes](https://img.shields.io/badge/kubernetes-1.20%2B-blue)](https://kubernetes.io/)
+[![Platform](https://img.shields.io/badge/platform-minikube-orange)](https://minikube.sigs.k8s.io/)
+
+> **Note**: This project is designed for educational and demonstration purposes. It showcases modern cloud-native application development practices, but may require additional hardening for production use.

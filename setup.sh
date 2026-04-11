@@ -47,6 +47,15 @@ check_prerequisites() {
   log_info "All prerequisites satisfied"
 }
 
+# ── Enable Addons ──────────────────────────────────────────
+enable_addons() {
+  print_header "Enabling Minikube Addons"
+  minikube addons enable ingress
+  minikube addons enable metrics-server
+  minikube addons enable csi-hostpath-driver
+  log_info "Addons enabled"
+}
+
 # ── Minikube Full Setup ────────────────────────────────────
 full_setup() {
   print_header "Full Minikube Setup"
@@ -80,11 +89,7 @@ full_setup() {
     --nodes=3 \
     --cni=calico
 
-  log_info "Enabling addons..."
-  minikube addons enable ingress
-  minikube addons enable metrics-server
-  minikube addons enable csi-hostpath-driver
-
+  enable_addons
   log_info "Minikube full setup complete"
 }
 
@@ -94,16 +99,16 @@ init_minikube() {
 
   if minikube status &> /dev/null; then
     log_warn "Minikube is already running"
-    # read -p "Restart minikube? (y/N): " -n 1 -r
-    # echo
-    # if [[ $REPLY =~ ^[Yy]$ ]]; then
-    #   log_info "Stopping existing minikube..."
-    #   minikube stop
-    #   minikube delete
-    # else
-    log_info "Using existing minikube"
-    return 0
-    # fi
+    read -p "Restart minikube? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      log_info "Stopping existing minikube..."
+      minikube stop
+      minikube delete
+    else
+      log_info "Using existing minikube"
+      return 0
+    fi
   fi
 
   log_info "Starting minikube..."
@@ -112,11 +117,7 @@ init_minikube() {
     --nodes=3 \
     --cni=calico
 
-  log_info "Enabling addons..."
-  minikube addons enable ingress
-  minikube addons enable metrics-server
-  minikube addons enable csi-hostpath-driver
-
+  enable_addons
   log_info "Minikube is ready"
 }
 
@@ -143,7 +144,8 @@ configure_nodes() {
     if [[ "$node" != "minikube" ]]; then
       log_info "Configuring worker node: $node"
       kubectl label node "$node" type=high-memory --overwrite
-      kubectl taint nodes "$node" database-only=true:NoSchedule --overwrite 2>/dev/null || true
+      kubectl taint nodes "$node" database-only=true:NoSchedule \
+        --overwrite 2>/dev/null || true
       worker_nodes_configured=$((worker_nodes_configured + 1))
     fi
   done
@@ -154,6 +156,16 @@ configure_nodes() {
   fi
 
   log_info "Configured $worker_nodes_configured worker node(s)"
+
+  # ── Fix inotify limits ──────────────────────────────────
+  log_info "Tuning inotify limits on worker nodes..."
+  for node in "${nodes[@]}"; do
+    if [[ "$node" != "minikube" ]]; then
+      minikube ssh -n "$node" -- sudo sysctl -w fs.inotify.max_user_watches=524288
+      minikube ssh -n "$node" -- sudo sysctl -w fs.inotify.max_user_instances=512
+      log_info "inotify tuned on $node"
+    fi
+  done
 
   # Verify
   echo ""
@@ -234,11 +246,13 @@ handle_dashboard_image() {
 
 update_image_references() {
   if [[ -n "$API_IMAGE" ]]; then
-    sed -i "s|image: .*banking-api.*|image: $API_IMAGE|" "$K8S_DIR/04-api-deployment.yaml"
+    sed -i "s|image: .*banking-api.*|image: $API_IMAGE|" \
+      "$K8S_DIR/04-api-deployment.yaml"
     log_info "Updated API image → $API_IMAGE"
   fi
   if [[ -n "$DASHBOARD_IMAGE" ]] && [[ -s "$K8S_DIR/05-dashboard-deployment.yaml" ]]; then
-    sed -i "s|image: .*banking-dashboard.*|image: $DASHBOARD_IMAGE|" "$K8S_DIR/05-dashboard-deployment.yaml"
+    sed -i "s|image: .*banking-dashboard.*|image: $DASHBOARD_IMAGE|" \
+      "$K8S_DIR/05-dashboard-deployment.yaml"
     log_info "Updated Dashboard image → $DASHBOARD_IMAGE"
   fi
 }
@@ -251,7 +265,6 @@ setup_hosts() {
 
   if grep -q "banking.local" /etc/hosts; then
     log_warn "banking.local already exists in /etc/hosts"
-    # Update IP in case it changed
     sudo sed -i "s/.*banking.local/$minikube_ip banking.local/" /etc/hosts
     log_info "Updated banking.local → $minikube_ip"
   else
@@ -291,15 +304,16 @@ deploy_k8s_manifests() {
   local manifest_order=(
     "01-configmap.yaml"
     "02-secret.yaml"
-    "06-services.yaml"              # headless service before StatefulSet
+    "06-services.yaml"
     "03-postgres-statefulset.yaml"
     "04-api-deployment.yaml"
     "05-dashboard-deployment.yaml"
     "07-ingress.yaml"
-    "08-hpa-vpa.yaml"
-    "09-rbac.yaml"
-    "10-networkpolicy.yaml"
-    "11-daemonset-fluentd.yaml"
+    "08-hpa.yaml"
+    # "09-vpa.yaml"               # not applied — future use
+    "10-rbac.yaml"
+    "11-networkpolicy.yaml"
+    "12-daemonset-fluentd.yaml"
   )
 
   for manifest in "${manifest_order[@]}"; do
@@ -330,17 +344,13 @@ wait_for_deployments() {
 
   wait_for_postgres
 
-  if [[ -n "$API_IMAGE" ]]; then
-    log_info "Waiting for Banking API..."
-    kubectl rollout status deployment/banking-api \
-      -n banking --timeout=180s || log_warn "API rollout timeout"
-  fi
+  log_info "Waiting for Banking API..."
+  kubectl rollout status deployment/banking-api \
+    -n banking --timeout=180s || log_warn "API rollout timeout"
 
-  if [[ -n "$DASHBOARD_IMAGE" ]]; then
-    log_info "Waiting for Dashboard..."
-    kubectl rollout status deployment/banking-dashboard \
-      -n banking --timeout=180s || log_warn "Dashboard rollout timeout"
-  fi
+  log_info "Waiting for Dashboard..."
+  kubectl rollout status deployment/banking-dashboard \
+    -n banking --timeout=180s || log_warn "Dashboard rollout timeout"
 
   log_info "All deployments processed"
 }
@@ -365,6 +375,10 @@ show_status() {
   kubectl get pvc -n banking
   echo ""
 
+  echo -e "${GREEN}=== HPA ===${NC}"
+  kubectl get hpa -n banking
+  echo ""
+
   echo -e "${GREEN}=== Nodes ===${NC}"
   kubectl get nodes -o wide
 }
@@ -372,19 +386,23 @@ show_status() {
 # ── Access Info ────────────────────────────────────────────
 show_access_info() {
   print_header "Access Information"
-  local minikube_ip
-  minikube_ip=$(minikube ip)
 
   echo "Dashboard:  http://banking.local"
   echo "API:        http://banking.local/api/accounts"
   echo "API health: http://banking.local/api/health"
+  echo "API ready:  http://banking.local/api/ready"
   echo ""
-  echo "Or use port-forward:"
+  echo "Port-forward alternatives:"
   echo "  kubectl port-forward svc/banking-api-service 3000:3000 -n banking"
   echo "  kubectl port-forward svc/banking-dashboard-service 8080:80 -n banking"
   echo ""
   echo "Verify replication:"
   echo "  kubectl exec -it postgres-db-0 -n banking -- psql -U postgres -c 'SELECT * FROM pg_stat_replication;'"
+  echo ""
+  echo "RBAC verification:"
+  echo "  kubectl auth can-i get pods -n banking --as developer"
+  echo "  kubectl auth can-i delete pods -n banking --as developer"
+  echo "  kubectl auth can-i get secrets -n banking --as developer"
 }
 
 # ── Cleanup ────────────────────────────────────────────────
@@ -430,6 +448,7 @@ main() {
     echo "  full-setup       Fresh minikube install + full deploy"
     echo "  setup            Deploy to existing cluster"
     echo "  configure-nodes  Label and taint nodes only"
+    echo "  addons           Enable required minikube addons"
     echo "  images           Build and push images only"
     echo "  deploy           Apply manifests only"
     echo "  status           Show deployment status"
@@ -472,6 +491,9 @@ main() {
     configure-nodes)
       configure_nodes
       ;;
+    addons)
+      enable_addons
+      ;;
     images)
       handle_api_image
       handle_dashboard_image
@@ -480,6 +502,7 @@ main() {
     deploy)
       deploy_k8s_manifests
       wait_for_deployments
+      setup_hosts
       show_status
       ;;
     status)
