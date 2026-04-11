@@ -94,16 +94,16 @@ init_minikube() {
 
   if minikube status &> /dev/null; then
     log_warn "Minikube is already running"
-    read -p "Restart minikube? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      log_info "Stopping existing minikube..."
-      minikube stop
-      minikube delete
-    else
-      log_info "Using existing minikube"
-      return 0
-    fi
+    # read -p "Restart minikube? (y/N): " -n 1 -r
+    # echo
+    # if [[ $REPLY =~ ^[Yy]$ ]]; then
+    #   log_info "Stopping existing minikube..."
+    #   minikube stop
+    #   minikube delete
+    # else
+    log_info "Using existing minikube"
+    return 0
+    # fi
   fi
 
   log_info "Starting minikube..."

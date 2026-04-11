@@ -1,0 +1,21 @@
+# apiVersion: autoscaling.k8s.io/v1
+# kind: VerticalPodAutoscaler
+# metadata:
+#   name: postgres-db-vpa
+#   namespace: banking
+# spec:
+#   resourcePolicy:
+#     containerPolicies:
+#     - containerName: postgres
+#       maxAllowed:
+#         cpu: 1
+#         memory: 2Gi
+#       minAllowed:
+#         cpu: 100m
+#         memory: 256Mi
+#   targetRef:
+#     apiVersion: apps/v1
+#     kind: StatefulSet
+#     name: postgres-db
+#   updatePolicy:
+#     updateMode: "Off"
