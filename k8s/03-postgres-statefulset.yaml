@@ -1,3 +1,13 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-retain
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -145,6 +155,7 @@ spec:
         name: postgres-data
       spec:
         accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path-retain
         resources:
           requests:
             storage: 5Gi

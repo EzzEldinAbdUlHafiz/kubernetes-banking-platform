@@ -13,152 +13,132 @@ spec:
       labels:
         app: banking-api
     spec:
-      # serviceAccountName: banking-api-sa
-
-      # ── Stay off the database node ────────────────────────
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
-              - matchExpressions:
-                  - key: type
-                    operator: In
-                    values:
-                      - high-memory
-        podAntiAffinity:  # existing - remove the postgres-db part
+            - matchExpressions:
+              - key: type
+                operator: In
+                values:
+                - high-memory
+        podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - banking-api    # change from postgres-db to banking-api
-              topologyKey: kubernetes.io/hostname
-
-      tolerations:
-        - key: database-only
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
-
-      # ── Init container: wait for DB ───────────────────────
-      initContainers:
-        - name: wait-for-db
-          image: busybox:1.36
-          command:
-            - sh
-            - -c
-            - |
-              echo "Waiting for postgres-db:5432..."
-              until nc -z postgres-db 5432; do
-                echo "DB not ready, retrying in 2s..."
-                sleep 2
-              done
-              echo "DB is ready!"
-
-      # ── Container ─────────────────────────────────────────
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - banking-api
+            topologyKey: kubernetes.io/hostname
       containers:
-        - name: banking-api
-          image: ezzeldinabdulhafiz/banking-api:v1.0
-          imagePullPolicy: Always
-
-          securityContext:
-            runAsUser: 1000
-            runAsNonRoot: true
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-
-          env:
-            - name: DB_HOST_PRIMARY
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: DB_HOST_PRIMARY
-            - name: DB_HOST_REPLICA
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: DB_HOST_REPLICA
-            - name: DB_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: DB_PORT
-            - name: DB_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: DB_NAME
-            - name: DB_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: DB_USER
-            - name: PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: PORT
-            - name: API_LOG_LEVEL
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: API_LOG_LEVEL
-            - name: MAX_TRANSACTION_LIMIT
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: MAX_TRANSACTION_LIMIT
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: banking-secret
-                  key: DB_PASSWORD
-
-          ports:
-            - containerPort: 3000
-              name: http
-
-          # ── Probes ───────────────────────────────────────
-          startupProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            failureThreshold: 12
-            periodSeconds: 5        # 12x5s = 60s max to start
-
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 3000
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            failureThreshold: 3
-
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 15
-            periodSeconds: 15
-            failureThreshold: 3
-
-          # ── Resources ────────────────────────────────────
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "500m"
-              memory: "256Mi"
-
-          # ── Writable tmp dir (readOnlyRootFilesystem) ────
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-
+      - env:
+        - name: DB_HOST_PRIMARY
+          valueFrom:
+            configMapKeyRef:
+              key: DB_HOST_PRIMARY
+              name: banking-config
+        - name: DB_HOST_REPLICA
+          valueFrom:
+            configMapKeyRef:
+              key: DB_HOST_REPLICA
+              name: banking-config
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              key: DB_PORT
+              name: banking-config
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              key: DB_NAME
+              name: banking-config
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              key: DB_USER
+              name: banking-config
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              key: PORT
+              name: banking-config
+        - name: API_LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              key: API_LOG_LEVEL
+              name: banking-config
+        - name: MAX_TRANSACTION_LIMIT
+          valueFrom:
+            configMapKeyRef:
+              key: MAX_TRANSACTION_LIMIT
+              name: banking-config
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: DB_PASSWORD
+              name: banking-secret
+        image: ezzeldinabdulhafiz/banking-api:v1.0
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 15
+        name: banking-api
+        ports:
+        - containerPort: 3000
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+        startupProbe:
+          failureThreshold: 12
+          httpGet:
+            path: /health
+            port: 3000
+          periodSeconds: 5
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for postgres-db:5432..."
+          until nc -z postgres-db 5432; do
+            echo "DB not ready, retrying in 2s..."
+            sleep 2
+          done
+          echo "DB is ready!"
+        image: busybox:1.36
+        name: wait-for-db
+      serviceAccountName: banking-api-sa
+      tolerations:
+      - effect: NoSchedule
+        key: database-only
+        operator: Equal
+        value: "true"
       volumes:
-        - name: tmp
-          emptyDir: {}
+      - name: tmp
