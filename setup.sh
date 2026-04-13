@@ -52,8 +52,24 @@ enable_addons() {
   print_header "Enabling Minikube Addons"
   minikube addons enable ingress
   minikube addons enable metrics-server
+  minikube addons enable volumesnapshots
   minikube addons enable csi-hostpath-driver
   log_info "Addons enabled"
+}
+
+# ── Storage Provisioner ─────────────────────────────────────
+ensure_local_path_provisioner() {
+  print_header "Ensuring Local Path Provisioner"
+  log_info "Applying Rancher local-path-provisioner..."
+  kubectl apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml"
+
+  if kubectl get deployment -n local-path-storage local-path-provisioner &> /dev/null; then
+    log_info "Waiting for local-path-provisioner rollout..."
+    kubectl rollout status deployment/local-path-provisioner \
+      -n local-path-storage --timeout=180s || log_warn "local-path-provisioner rollout timeout"
+  else
+    log_warn "local-path-provisioner deployment not found yet; skipping rollout wait"
+  fi
 }
 
 # ── Minikube Full Setup ────────────────────────────────────
@@ -63,7 +79,7 @@ full_setup() {
   log_info "  Driver:  docker"
   log_info "  Nodes:   3 (1 control plane + 2 workers)"
   log_info "  CNI:     Calico"
-  log_info "  Addons:  ingress, metrics-server, csi-hostpath-driver"
+  log_info "  Addons:  ingress, metrics-server, volumesnapshots, csi-hostpath-driver"
   echo ""
 
   read -p "Continue? (y/N): " -n 1 -r
@@ -129,16 +145,6 @@ configure_nodes() {
   local nodes=($(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'))
   local worker_nodes_configured=0
 
-  # Taint control plane
-  for node in "${nodes[@]}"; do
-    if [[ "$node" == "minikube" ]]; then
-      log_info "Tainting control plane node: $node"
-      kubectl taint nodes "$node" \
-        node-role.kubernetes.io/control-plane=:NoSchedule \
-        --overwrite 2>/dev/null || true
-    fi
-  done
-
   # Label and taint all worker nodes
   for node in "${nodes[@]}"; do
     if [[ "$node" != "minikube" ]]; then
@@ -157,14 +163,14 @@ configure_nodes() {
 
   log_info "Configured $worker_nodes_configured worker node(s)"
 
-  # ── Fix inotify limits ──────────────────────────────────
-  log_info "Tuning inotify limits on worker nodes..."
+  # ── Fix inotify limits (Applied to ALL nodes) ──────────────────────────
+  log_info "Tuning inotify limits on ALL nodes..."
   for node in "${nodes[@]}"; do
-    if [[ "$node" != "minikube" ]]; then
-      minikube ssh -n "$node" -- sudo sysctl -w fs.inotify.max_user_watches=524288
-      minikube ssh -n "$node" -- sudo sysctl -w fs.inotify.max_user_instances=512
-      log_info "inotify tuned on $node"
-    fi
+    log_info "Tuning inotify on: $node"
+    minikube ssh -n "$node" "echo 'fs.inotify.max_user_watches=524288' | sudo tee -a /etc/sysctl.conf"
+    minikube ssh -n "$node" "echo 'fs.inotify.max_user_instances=512' | sudo tee -a /etc/sysctl.conf"
+    minikube ssh -n "$node" "sudo sysctl -p"
+    log_info "inotify tuned on $node"
   done
 
   # Verify
@@ -294,8 +300,8 @@ deploy_k8s_manifests() {
   kubectl apply -f "$K8S_DIR/00-namespace.yaml"
 
   # Step 2 — ConfigMap for postgres init script
-  log_info "Creating postgres-init-script ConfigMap..."
-  kubectl create configmap postgres-init-script \
+  log_info "Creating postgres-setup-script ConfigMap..."
+  kubectl create configmap postgres-setup-script \
     --from-file=init.sh="$K8S_DIR/scripts/postgres-init.sh" \
     --namespace=banking \
     --dry-run=client -o yaml | kubectl apply -f -
@@ -469,6 +475,7 @@ main() {
       handle_api_image
       handle_dashboard_image
       update_image_references
+      ensure_local_path_provisioner
       deploy_k8s_manifests
       wait_for_deployments
       setup_hosts
@@ -482,6 +489,7 @@ main() {
       handle_api_image
       handle_dashboard_image
       update_image_references
+      ensure_local_path_provisioner
       deploy_k8s_manifests
       wait_for_deployments
       setup_hosts

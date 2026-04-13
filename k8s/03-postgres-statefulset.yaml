@@ -20,12 +20,13 @@ spec:
     matchLabels:
       app: postgres-db
   podManagementPolicy: OrderedReady
+
+  # pod template
   template:
     metadata:
       labels:
         app: postgres-db
     spec:
-
       # ── Placement ────────────────────────────────────────
       affinity:
         nodeAffinity:
@@ -36,6 +37,7 @@ spec:
                     operator: In
                     values:
                       - high-memory
+        # ── make sure that every pod runs on a differant node
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
@@ -53,6 +55,7 @@ spec:
           effect: NoSchedule
 
       # ── Security ─────────────────────────────────────────
+      # official postgres:15-alpine image uses UID 70
       securityContext:
         runAsUser: 70
         runAsGroup: 70
@@ -78,7 +81,7 @@ spec:
       volumes:
         - name: init-script
           configMap:
-            name: postgres-init-script
+            name: postgres-setup-script
             defaultMode: 0755      # makes init.sh executable
 
       # ── Container ────────────────────────────────────────
@@ -107,8 +110,6 @@ spec:
                 configMapKeyRef:
                   name: banking-config
                   key: DB_USER
-            - name: PGDATA
-              value: /var/lib/postgresql/data
 
           ports:
             - containerPort: 5432
@@ -144,11 +145,13 @@ spec:
 
           # ── Resources ────────────────────────────────────
           resources:
-            limits:
-              memory: "2Gi"
             requests:
-              memory: "1Gi"
-
+              memory: "300Mi"  # Slightly higher to handle the copy buffer
+              cpu: "150m"      # Extra 'muscle' for the compression/copying
+            limits:
+              memory: "768Mi"  # More 'ceiling' so spikes in traffic don't kill the pod
+              cpu: "1000m"     # Allow 1 full core for fast catch-up if the nodes lose sync
+              
   # ── PVC per pod ────────────────────────────────────────
   volumeClaimTemplates:
     - metadata:

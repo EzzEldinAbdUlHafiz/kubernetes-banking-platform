@@ -1,4 +1,4 @@
----
+## serviceAccount
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -11,59 +11,69 @@ metadata:
   name: banking-dashboard-sa
   namespace: banking
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluentd-sa
+  namespace: banking
+---
+#---------------------------------------------------------
+## role
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: developer
   namespace: banking
 rules:
-- resources:
-  - pods
-  - services
-  - configmaps
-  verbs:
-  - get
-  - list
-  - watch
-  apiGroups: [""]
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps"]
+  verbs: ["get", "list", "watch"]
 ---
+# Needs ClusterRole (not Role) because it reads node-level resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluentd
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - namespaces
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+
+---
+#---------------------------------------------------------
+## roleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: developer-binding
+  name: banking-developer-binding
   namespace: banking
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: developer
 subjects:
-- apiGroup: rbac.authorization.k8s.io
-  kind: User
-  name: developer
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: fluentd-cluster
-rules:
-- apiGroups: [""]
-  resources:
-  - pods
-  - namespaces
-  verbs:
-  - get
-  - list
-  - watch
+- kind: ServiceAccount
+  name: banking-api-sa
+  namespace: banking
+- kind: ServiceAccount
+  name: banking-dashboard-sa
+  namespace: banking
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: fluentd-cluster-binding
+  name: fluentd
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: fluentd-cluster
+  name: fluentd
 subjects:
-- kind: ServiceAccount
-  name: default
-  namespace: banking
+  - kind: ServiceAccount
+    name: fluentd-sa
+    namespace: banking

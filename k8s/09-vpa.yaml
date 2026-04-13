@@ -7,12 +7,12 @@ spec:
   resourcePolicy:
     containerPolicies:
     - containerName: postgres
-      maxAllowed:
-        cpu: 1
-        memory: 2Gi
       minAllowed:
         cpu: 100m
         memory: 256Mi
+      maxAllowed:
+        cpu: 1
+        memory: 2Gi
   targetRef:
     apiVersion: apps/v1
     kind: StatefulSet

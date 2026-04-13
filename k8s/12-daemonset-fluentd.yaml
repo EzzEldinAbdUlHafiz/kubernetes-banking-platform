@@ -50,13 +50,18 @@ spec:
       labels:
         app: fluentd
     spec:
+      serviceAccountName: fluentd-sa
       nodeSelector:
         type: high-memory
       tolerations:
         - operator: Exists
+#---------------------------------------------------------  
+## Container
       containers:
         - name: fluentd
           image: fluent/fluentd-kubernetes-daemonset:v1-debian-elasticsearch
+#---------------------------------------------------------
+## resources
           resources:
             requests:
               cpu: 100m
@@ -64,6 +69,8 @@ spec:
             limits:
               cpu: 200m
               memory: 256Mi
+#---------------------------------------------------------
+## volume mount && volumes
           volumeMounts:
             - name: varlog
               mountPath: /var/log
@@ -83,3 +90,4 @@ spec:
         - name: fluentd-config
           configMap:
             name: fluentd-config
+#---------------------------------------------------------
