@@ -28,7 +28,7 @@ This project demonstrates a production-ready banking platform deployed on Kubern
    - Node affinity to `high-memory` labeled nodes
    - Pod anti-affinity for high availability
    - Persistent Volume Claims (5Gi each)
-   - Custom init script for replication setup
+   - Custom setup script for replication setup
 
 2. **Banking API Deployment** (`04-api-deployment.yaml`)
    - Node.js/Express application with PostgreSQL connection pooling
@@ -134,7 +134,7 @@ The setup script provides several options for deployment:
    kubectl apply -f k8s/00-namespace.yaml
    
    # Create ConfigMap and Secret
-   kubectl create configmap postgres-init-script \
+   kubectl create configmap postgres-setup-script \
      --from-file=init.sh=k8s/scripts/postgres-init.sh \
      --namespace=banking --dry-run=client -o yaml | kubectl apply -f -
    kubectl apply -f k8s/01-configmap.yaml

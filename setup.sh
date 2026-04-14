@@ -299,7 +299,7 @@ deploy_k8s_manifests() {
   log_info "Applying 00-namespace.yaml..."
   kubectl apply -f "$K8S_DIR/00-namespace.yaml"
 
-  # Step 2 — ConfigMap for postgres init script
+  # Step 2 — ConfigMap for postgres setup script
   log_info "Creating postgres-setup-script ConfigMap..."
   kubectl create configmap postgres-setup-script \
     --from-file=init.sh="$K8S_DIR/scripts/postgres-init.sh" \
