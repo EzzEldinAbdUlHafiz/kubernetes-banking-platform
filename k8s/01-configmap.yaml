@@ -1,9 +1,3 @@
-# ── App Configuration ──────────────────────────────────────
-# This file contains non-sensitive application config.
-#
-# NOTE: The postgres init script ConfigMap is NOT here.
-# It is generated from k8s/scripts/postgres-init.sh by setup.sh
-# or manually with:
 #
   # kubectl create configmap postgres-setup-script \
   #   --from-file=init.sh=k8s/scripts/postgres-init.sh \
