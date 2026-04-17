@@ -13,6 +13,69 @@ spec:
       labels:
         app: banking-dashboard
     spec:
+      serviceAccountName: banking-dashboard-sa
+#---------------------------------------------------------
+## Container
+      containers:
+      - image: ezzeldinabdulhafiz/banking-dashboard:v1.0
+        imagePullPolicy: Always
+        name: banking-dashboard
+        volumeMounts:
+        - mountPath: /var/cache/nginx
+          name: cache
+        - mountPath: /var/run
+          name: run
+        - mountPath: /tmp
+          name: tmp
+#---------------------------------------------------------  
+## Probes
+        startupProbe:
+          failureThreshold: 12
+          httpGet:
+            path: /
+            port: 80
+          periodSeconds: 5
+
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+#---------------------------------------------------------
+## ports
+        ports:
+        - containerPort: 80
+#---------------------------------------------------------
+## resources
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 200m
+            memory: 128Mi
+#---------------------------------------------------------
+## Security
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 101
+#---------------------------------------------------------
+# pods placement affinity && toleration
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -22,61 +85,16 @@ spec:
                 operator: In
                 values:
                 - high-memory
-      containers:
-      - image: ezzeldinabdulhafiz/banking-dashboard:v1.0
-        imagePullPolicy: Always
-        livenessProbe:
-          failureThreshold: 3
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 10
-          periodSeconds: 30
-        name: banking-dashboard
-        ports:
-        - containerPort: 80
-        readinessProbe:
-          failureThreshold: 3
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        resources:
-          limits:
-            cpu: 200m
-            memory: 128Mi
-          requests:
-            cpu: 200m
-            memory: 128Mi
-        securityContext:
-          capabilities:
-            add:
-            - NET_BIND_SERVICE
-            drop:
-            - ALL
-          runAsNonRoot: true
-          runAsUser: 101
-        startupProbe:
-          failureThreshold: 12
-          httpGet:
-            path: /
-            port: 80
-          periodSeconds: 5
-        volumeMounts:
-        - mountPath: /var/cache/nginx
-          name: cache
-        - mountPath: /var/run
-          name: run
-        - mountPath: /tmp
-          name: tmp
-      serviceAccountName: banking-dashboard-sa
+
       tolerations:
       - effect: NoSchedule
         key: database-only
         operator: Equal
         value: "true"
+#---------------------------------------------------------
+## volumes
       volumes:
       - name: cache
       - name: run
       - name: tmp
+#---------------------------------------------------------

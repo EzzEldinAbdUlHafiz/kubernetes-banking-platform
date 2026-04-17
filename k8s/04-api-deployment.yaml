@@ -13,114 +13,9 @@ spec:
       labels:
         app: banking-api
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: type
-                operator: In
-                values:
-                - high-memory
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: app
-                operator: In
-                values:
-                - banking-api
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - env:
-        - name: DB_HOST_PRIMARY
-          valueFrom:
-            configMapKeyRef:
-              key: DB_HOST_PRIMARY
-              name: banking-config
-        - name: DB_HOST_REPLICA
-          valueFrom:
-            configMapKeyRef:
-              key: DB_HOST_REPLICA
-              name: banking-config
-        - name: DB_PORT
-          valueFrom:
-            configMapKeyRef:
-              key: DB_PORT
-              name: banking-config
-        - name: DB_NAME
-          valueFrom:
-            configMapKeyRef:
-              key: DB_NAME
-              name: banking-config
-        - name: DB_USER
-          valueFrom:
-            configMapKeyRef:
-              key: DB_USER
-              name: banking-config
-        - name: PORT
-          valueFrom:
-            configMapKeyRef:
-              key: PORT
-              name: banking-config
-        - name: API_LOG_LEVEL
-          valueFrom:
-            configMapKeyRef:
-              key: API_LOG_LEVEL
-              name: banking-config
-        - name: MAX_TRANSACTION_LIMIT
-          valueFrom:
-            configMapKeyRef:
-              key: MAX_TRANSACTION_LIMIT
-              name: banking-config
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              key: DB_PASSWORD
-              name: banking-secret
-        image: ezzeldinabdulhafiz/banking-api:v1.0
-        imagePullPolicy: Always
-        livenessProbe:
-          failureThreshold: 3
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 15
-        name: banking-api
-        ports:
-        - containerPort: 3000
-          name: http
-        readinessProbe:
-          failureThreshold: 3
-          httpGet:
-            path: /ready
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        resources:
-          limits:
-            cpu: 500m
-            memory: 256Mi
-          requests:
-            cpu: 100m
-            memory: 128Mi
-        securityContext:
-          capabilities:
-            drop:
-            - ALL
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 1000
-        startupProbe:
-          failureThreshold: 12
-          httpGet:
-            path: /health
-            port: 3000
-          periodSeconds: 5
-        volumeMounts:
-        - mountPath: /tmp
-          name: tmp
+      serviceAccountName: banking-api-sa
+#---------------------------------------------------------
+## Init Container
       initContainers:
       - command:
         - sh
@@ -134,11 +29,98 @@ spec:
           echo "DB is ready!"
         image: busybox:1.36
         name: wait-for-db
-      serviceAccountName: banking-api-sa
+#---------------------------------------------------------  
+## Container
+      containers:
+      - image: ezzeldinabdulhafiz/banking-api:v1.0
+        imagePullPolicy: Always
+        name: banking-api
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+#---------------------------------------------------------  
+## Probes
+        startupProbe:
+          failureThreshold: 12
+          httpGet:
+            path: /health
+            port: 3000
+          periodSeconds: 5
+
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 15
+
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+#---------------------------------------------------------
+## ports
+        ports:
+        - containerPort: 3000
+          # name: http
+#---------------------------------------------------------
+## resources
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+#---------------------------------------------------------
+## environment variables
+        envFrom:
+          - configMapRef:
+              name: banking-config
+          - secretRef:
+              name: banking-secret
+#---------------------------------------------------------
+## Security
+        securityContext:
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+#---------------------------------------------------------
+# pods placement affinity && toleration
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: type
+                operator: In
+                values:
+                - high-memory
+        # ── make sure that every pod runs on a differant node
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - banking-api
+            topologyKey: kubernetes.io/hostname
+
       tolerations:
       - effect: NoSchedule
         key: database-only
         operator: Equal
         value: "true"
+#---------------------------------------------------------
+## volumes
       volumes:
       - name: tmp
+#---------------------------------------------------------

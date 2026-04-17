@@ -11,7 +11,7 @@ spec:
   ports:
     - port: 5432
       targetPort: 5432
-      name: postgres
+      # name: postgres
 
 ---
 # ── ClusterIP Service for Banking API ─────────────────────
@@ -26,7 +26,7 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
-      name: http
+      # name: http
 
 ---
 # ── ClusterIP Service for Dashboard ───────────────────────
@@ -41,4 +41,4 @@ spec:
   ports:
     - port: 80
       targetPort: 80
-      name: http
+      # name: http
