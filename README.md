@@ -236,10 +236,6 @@ kubectl port-forward svc/banking-api-service 3000:3000 -n banking
 kubectl port-forward svc/banking-dashboard-service 8080:80 -n banking
 ```
 
-### Access from Windows Host
-
-If running Kubernetes in a Linux VM and accessing from a Windows host, see [access_from_win.md](access_from_win.md) for detailed instructions on configuring cross-platform access.
-
 ### API Endpoints
 
 | Method | Endpoint | Description |
