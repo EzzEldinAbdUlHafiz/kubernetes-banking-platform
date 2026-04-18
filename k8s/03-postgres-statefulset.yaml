@@ -1,5 +1,7 @@
 # kubectl exec -it postgres-db-0 -n banking -- sh -c 'psql -U $DB_USER -d $DB_NAME -c "SELECT * FROM accounts;"'
 # kubectl exec -it postgres-db-1 -n banking -- sh -c 'psql -U $DB_USER -d $DB_NAME -c "SELECT * FROM accounts;"'
+#---------------------------------------------------------
+## Storage Class
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -10,6 +12,8 @@ provisioner: rancher.io/local-path
 reclaimPolicy: Retain
 volumeBindingMode: WaitForFirstConsumer
 ---
+#---------------------------------------------------------
+## Postgres-db StatefulSet
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -22,14 +26,110 @@ spec:
     matchLabels:
       app: postgres-db
   podManagementPolicy: OrderedReady
-
-  # pod template
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path-retain
+        resources:
+          requests:
+            storage: 5Gi
+#---------------------------------------------------------
+## pod template
   template:
     metadata:
       labels:
         app: postgres-db
     spec:
-      # ── Placement ────────────────────────────────────────
+#---------------------------------------------------------
+## pod Security 
+# official postgres:15-alpine image uses UID 70
+      securityContext:
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+#---------------------------------------------------------
+## Init Container
+      initContainers:
+        - name: init-permissions
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - |
+              chown -R 70:70 /var/lib/postgresql/data
+              chmod -R 700 /var/lib/postgresql/data
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 0
+#---------------------------------------------------------  
+## Container  
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          command: ["/scripts/init.sh"]
+          volumeMounts:
+            - name: init-script
+              mountPath: /scripts
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              memory: "300Mi"
+              cpu: "150m"
+            limits:
+              memory: "768Mi"
+              cpu: "1000m"       
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+#---------------------------------------------------------  
+## Probes
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            failureThreshold: 20
+            periodSeconds: 5       # 20x5s = 100s max to start
+
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+#---------------------------------------------------------
+## environment variables
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secret
+                  key: DB_PASSWORD
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-config
+                  key: DB_USER
+#---------------------------------------------------------
+## pods placement affinity && toleration
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -55,112 +155,11 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
-
-      # ── Security ─────────────────────────────────────────
-      # official postgres:15-alpine image uses UID 70
-      securityContext:
-        runAsUser: 70
-        runAsGroup: 70
-        fsGroup: 70
-
-      # ── Init Container ───────────────────────────────────
-      initContainers:
-        - name: init-permissions
-          image: postgres:15-alpine
-          command:
-            - sh
-            - -c
-            - |
-              chown -R 70:70 /var/lib/postgresql/data
-              chmod -R 700 /var/lib/postgresql/data
-          volumeMounts:
-            - name: postgres-data
-              mountPath: /var/lib/postgresql/data
-          securityContext:
-            runAsUser: 0
-
-      # ── Volumes ──────────────────────────────────────────
+#---------------------------------------------------------
+## configMap volumes
       volumes:
         - name: init-script
           configMap:
             name: postgres-setup-script
             defaultMode: 0755      # makes init.sh executable
-
-      # ── Container ────────────────────────────────────────
-      containers:
-        - name: postgres
-          image: postgres:15-alpine
-          command: ["/scripts/init.sh"]
-          securityContext:
-            capabilities:
-              drop:
-                - ALL
-
-          env:
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: banking-secret
-                  key: DB_PASSWORD
-            - name: DB_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: DB_NAME
-            - name: DB_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-config
-                  key: DB_USER
-
-          ports:
-            - containerPort: 5432
-              name: postgres
-
-          # ── Probes ─────────────────────────────────────
-          startupProbe:
-            exec:
-              command: ["pg_isready", "-U", "postgres"]
-            failureThreshold: 20
-            periodSeconds: 5       # 20x5s = 100s max to start
-
-          readinessProbe:
-            exec:
-              command: ["pg_isready", "-U", "postgres"]
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            failureThreshold: 3
-
-          livenessProbe:
-            exec:
-              command: ["pg_isready", "-U", "postgres"]
-            initialDelaySeconds: 30
-            periodSeconds: 30
-            failureThreshold: 3
-
-          # ── Volume Mounts ───────────────────────────────
-          volumeMounts:
-            - name: init-script
-              mountPath: /scripts
-            - name: postgres-data
-              mountPath: /var/lib/postgresql/data
-
-          # ── Resources ────────────────────────────────────
-          resources:
-            requests:
-              memory: "300Mi"  # Slightly higher to handle the copy buffer
-              cpu: "150m"      # Extra 'muscle' for the compression/copying
-            limits:
-              memory: "768Mi"  # More 'ceiling' so spikes in traffic don't kill the pod
-              cpu: "1000m"     # Allow 1 full core for fast catch-up if the nodes lose sync
-              
-  # ── PVC per pod ────────────────────────────────────────
-  volumeClaimTemplates:
-    - metadata:
-        name: postgres-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        storageClassName: local-path-retain
-        resources:
-          requests:
-            storage: 5Gi
+#---------------------------------------------------------
