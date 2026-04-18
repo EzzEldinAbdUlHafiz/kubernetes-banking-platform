@@ -339,16 +339,7 @@ curl http://banking.local/api/transactions
 curl http://banking.local/api/stats
 ```
 
-### Automated Testing
-
-Run the provided test script to verify the application:
-
-```bash
-# Execute the test script (if available)
-./test.sh
-```
-
-Or manually verify core functionality:
+### Testing
 
 1. Check API health: `curl http://banking.local/api/health`
 2. Create a test account: `curl -X POST http://banking.local/api/accounts -H "Content-Type: application/json" -d '{"owner": "John Doe", "initial_balance": 5000}'`

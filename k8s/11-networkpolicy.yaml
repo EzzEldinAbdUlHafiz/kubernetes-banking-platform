@@ -1,4 +1,4 @@
-# ── 1. Default deny all ingress and egress ────────────────
+# ── 1. Default deny all ingress and egress — baseline; blocks everything unless explicitly allowed by a subsequent policy
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -11,7 +11,7 @@ spec:
     - Egress
 
 ---
-# ── 2. Allow DNS egress for all pods ─────────────────────
+# ── 2. Allow DNS egress for all pods  — all pods need DNS (port 53) to resolve service names like
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -29,7 +29,7 @@ spec:
           protocol: TCP
 
 ---
-# ── 3. Allow ingress controller → dashboard ───────────────
+# ── 3. Allow ingress controller → dashboard — lets the nginx ingress controller reach the dashboard pod on port 80
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -50,7 +50,7 @@ spec:
         - port: 80
 
 ---
-# ── 4. Allow ingress controller → API ─────────────────────
+# ── 4. Allow ingress controller → API — lets the nginx ingress controller reach the API pods on port 3000
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -71,7 +71,7 @@ spec:
         - port: 3000
 
 ---
-# ── 5. Allow API egress → postgres ────────────────────────
+# ── 5. Allow API egress → postgres — lets API pods initiate connections to postgres on port 5432
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -92,7 +92,7 @@ spec:
         - port: 5432
 
 ---
-# ── 6. Allow API ingress from postgres (responses) ────────
+# ── 6. Allow API ingress ← postgres (response on ephemeral port) — allows postgres response traffic back into the API pods
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -109,11 +109,9 @@ spec:
         - podSelector:
             matchLabels:
               app: postgres-db
-      ports:
-        - port: 5432
 
 ---
-# ── 7. Allow postgres ingress from API ────────────────────
+# ── 7. Allow postgres ingress ← API — allows postgres pods to receive connections from the API
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -134,7 +132,26 @@ spec:
         - port: 5432
 
 ---
-# ── 8. Allow postgres replication ─────────────────────────
+# ── 8. Allow postgres egress → API (response on ephemeral port) — allows postgres to egress back to the API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-egress-to-api
+  namespace: banking
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres-db
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: banking-api
+
+---
+# ── 9. Allow postgres replication — allows postgres-db-0 and postgres-db-1 to talk to each other on port 5432 for WAL streaming
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -163,7 +180,7 @@ spec:
         - port: 5432
 
 ---
-# ── 9. Allow fluentd egress ───────────────────────────────
+# ── 10. Allow fluentd egress
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
