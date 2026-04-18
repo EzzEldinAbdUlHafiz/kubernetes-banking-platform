@@ -118,7 +118,9 @@ app.post('/api/accounts', async (req, res) => {
       'INSERT INTO accounts (owner, balance) VALUES ($1, $2) RETURNING *',
       [owner, initial_balance]
     );
-    res.status(201).json(result.rows[0]);
+    const createdAccount = result.rows[0];
+    console.log(`[account-created] id=${createdAccount.id} owner=${createdAccount.owner} balance=${createdAccount.balance}`);
+    res.status(201).json(createdAccount);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

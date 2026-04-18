@@ -57,6 +57,25 @@ enable_addons() {
   log_info "Addons enabled"
 }
 
+# ── Install VPA ────────────────────────────────────────────
+install_vpa() {
+  print_header "Installing Vertical Pod Autoscaler (VPA)"
+  
+  # Clone autoscaler repo and install VPA
+  if [[ ! -d "autoscaler" ]]; then
+    log_info "Cloning Kubernetes autoscaler repo..."
+    git clone https://github.com/kubernetes/autoscaler.git
+  else
+    log_info "Using existing autoscaler repo"
+  fi
+  
+  cd autoscaler/vertical-pod-autoscaler/hack
+  log_info "Running VPA installation script..."
+  ./vpa-up.sh
+  log_info "VPA installation complete"
+  cd ../../../..
+}
+
 # ── Storage Provisioner ─────────────────────────────────────
 ensure_local_path_provisioner() {
   print_header "Ensuring Local Path Provisioner"
@@ -321,7 +340,7 @@ deploy_k8s_manifests() {
     "05-dashboard-deployment.yaml"
     "07-ingress.yaml"
     "08-hpa.yaml"
-    # "09-vpa.yaml"               # not applied — future use
+    "09-vpa.yaml"
     "10-rbac.yaml"
     "11-networkpolicy.yaml"
     "12-daemonset-fluentd.yaml"
@@ -481,6 +500,7 @@ main() {
       handle_dashboard_image
       update_image_references
       ensure_local_path_provisioner
+      install_vpa
       deploy_k8s_manifests
       wait_for_deployments
       setup_hosts
@@ -495,6 +515,7 @@ main() {
       handle_dashboard_image
       update_image_references
       ensure_local_path_provisioner
+      install_vpa
       deploy_k8s_manifests
       wait_for_deployments
       setup_hosts
