@@ -2,7 +2,7 @@
 
 A comprehensive banking application deployed on Kubernetes with PostgreSQL replication, Node.js API, and modern web dashboard.
 
-![Architecture Diagram](https://raw.githubusercontent.com/ahmedabdulhafiz/kubernetes-banking-platform/main/docs/architecture.png)
+![Architecture Diagram](system-architecture.png)
 
 ## 📋 Project Overview
 
@@ -236,10 +236,6 @@ kubectl port-forward svc/banking-api-service 3000:3000 -n banking
 kubectl port-forward svc/banking-dashboard-service 8080:80 -n banking
 ```
 
-### Access from Windows Host
-
-If running Kubernetes in a Linux VM and accessing from a Windows host, see [access_from_win.md](access_from_win.md) for detailed instructions on configuring cross-platform access.
-
 ### API Endpoints
 
 | Method | Endpoint | Description |
@@ -470,6 +466,49 @@ kubectl port-forward svc/banking-api-service 3000:3000 -n banking
 - Image signing and verification in CI/CD pipeline
 - Enhanced network encryption with WireGuard or similar
 - Advanced audit logging and monitoring
+
+## 📈 Auto-scaling Configuration
+
+This project implements both horizontal and vertical pod autoscaling to ensure optimal resource utilization and performance under varying loads.
+
+### Horizontal Pod Autoscaler (HPA)
+
+The Horizontal Pod Autoscaler automatically adjusts the number of API pods based on CPU utilization:
+
+- Minimum replicas: 2
+- Maximum replicas: 10
+- Target CPU utilization: 60%
+
+Configuration file: `k8s/08-hpa.yaml`
+
+### Vertical Pod Autoscaler (VPA)
+
+The Vertical Pod Autoscaler monitors resource usage and provides recommendations for optimal resource allocation. It's configured in recommendation mode only (`updateMode: "Off"`), meaning it won't automatically adjust resources but will provide suggestions for manual tuning.
+
+Why do we need VPA?
+- Optimize resource allocation based on actual usage patterns
+- Reduce costs by rightsizing pods
+- Prevent performance issues from resource constraints
+- Provide insights for capacity planning
+
+Configuration file: `k8s/09-vpa.yaml`
+
+To view VPA recommendations:
+```bash
+kubectl describe vpa postgres-db-vpa -n banking
+```
+
+To enable automatic VPA updates, change `updateMode` from "Off" to "Auto" in `k8s/09-vpa.yaml`:
+```yaml
+updatePolicy:
+  updateMode: "Auto"
+```
+Then apply the changes:
+```bash
+kubectl apply -f k8s/09-vpa.yaml
+```
+
+Note: VPA requires the VerticalPodAutoscaler CRD to be installed in your cluster. For installation instructions, refer to the official Kubernetes autoscaler documentation.
 
 ## 📈 Performance Considerations
 
